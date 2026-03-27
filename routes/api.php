@@ -17,16 +17,13 @@ Route::prefix('auth')->middleware('auth:api')->group(function () {
     Route::get('/me',               [AuthController::class, 'me']);
 });
 
-// ── Admin only can use this api points───────────────────────────────
+// ── Admin only can use this api points from the proxy───────────────────────────────
 Route::prefix('admin')->middleware('auth:api')->group(function () {
-
     // Faculties
     Route::apiResource('faculties', FacultyController::class);
-
     // Departments
     Route::apiResource('departments', DepartmentController::class);
     Route::get('faculties/{facultyId}/departments', [DepartmentController::class, 'byFaculty']);
-
     // Programs
     Route::apiResource('programs', ProgramController::class);
     Route::get('departments/{departmentId}/programs', [ProgramController::class, 'byDepartment']);
