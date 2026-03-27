@@ -3,6 +3,8 @@
 namespace App\Http\Requests\Admin;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class StoreFacultyRequest extends FormRequest
 {
@@ -11,7 +13,7 @@ class StoreFacultyRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return false;
+        return true;
     }
 
     /**
@@ -21,8 +23,28 @@ class StoreFacultyRequest extends FormRequest
      */
     public function rules(): array
     {
+        $facultyId = $this->route('id');
+
         return [
-            //
+            'name'      => ['required', 'string', 'max:255'],
+            'code'      => [
+                'required',
+                'string',
+                'max:20',
+                'unique:faculties,code,' . $facultyId,
+            ],
+            'is_active' => ['sometimes', 'boolean'],
         ];
+    }
+
+    protected function failedValidation(Validator $validator): void
+    {
+        throw new HttpResponseException(
+            response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors'  => $validator->errors(),
+            ], 422)
+        );
     }
 }
