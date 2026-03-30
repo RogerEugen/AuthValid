@@ -1,0 +1,20 @@
+[90m= [39m[34;4mIlluminate\Database\Eloquent\Collection[39;24m {#1575
+    [34mall[39m: [
+      [34;4mApp\Models\Program[39;24m {#6541
+        [34mid[39m: [35m2[39m,
+        [34mcode[39m: "[32mBSC-CS[39m",
+        [34mname[39m: "[32mBSc Computer Science[39m",
+      },
+      [34;4mApp\Models\Program[39;24m {#6540
+        [34mid[39m: [35m3[39m,
+        [34mcode[39m: "[32mBIT[39m",
+        [34mname[39m: "[32mBachelor of Information Technology[39m",
+      },
+      [34;4mApp\Models\Program[39;24m {#6539
+        [34mid[39m: [35m4[39m,
+        [34mcode[39m: "[32mBCSPLO[39m",
+        [34mname[39m: "[32mBasic Technician Certificate in Shipping and Port Logistics Operations[39m",
+      },
+    ],
+  }
+

@@ -4,6 +4,7 @@ use  Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ProgramController;
 use App\Http\Controllers\Admin\FacultyController;
 use App\Http\Controllers\Admin\DepartmentController;
+use App\Http\Controllers\Registrar\CsvImportController;
 // Public routes — no token needed
 Route::prefix('auth')->group(function () {
     Route::post('/login',   [AuthController::class, 'login']);
@@ -27,4 +28,13 @@ Route::prefix('admin')->middleware('auth:api')->group(function () {
     // Programs
     Route::apiResource('programs', ProgramController::class);
     Route::get('departments/{departmentId}/programs', [ProgramController::class, 'byDepartment']);
+});
+
+
+// Registrar CSV import routes
+Route::prefix('registrar')->middleware('auth:api')->group(function () {
+    Route::get('/imports',          [CsvImportController::class, 'index']);
+    Route::post('/import/students', [CsvImportController::class, 'importStudents']);
+    Route::post('/import/staff',    [CsvImportController::class, 'importStaff']);
+    Route::get('/imports/{uuid}',   [CsvImportController::class, 'show']);
 });

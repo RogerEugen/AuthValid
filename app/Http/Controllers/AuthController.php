@@ -20,7 +20,6 @@ class AuthController extends Controller
     {
         $credentials = $request->only('email', 'password');
 
-        // 1. Check user exists and is active
         $user = User::where('email', $credentials['email'])->first();
 
         if (!$user) {
@@ -37,7 +36,6 @@ class AuthController extends Controller
             ], 403);
         }
 
-        // 2. Attempt JWT login
         try {
             if (!$token = JWTAuth::attempt($credentials)) {
                 return response()->json([
@@ -52,52 +50,101 @@ class AuthController extends Controller
             ], 500);
         }
 
-        // 3. Update last login timestamp
         $user->update(['last_login_at' => now()]);
 
-        // 4. Check if first login — force password change
+        // First login — force password change
         if ($user->must_change_password) {
             return response()->json([
-                'success'             => true,
+                'success'              => true,
                 'must_change_password' => true,
-                'message'             => 'You must change your password before continuing.',
-                'jwt'                 => $token,
-                'user' => [
-                    'uuid' => $user->uuid,
-                    'name' => $user->first_name . ' ' . $user->last_name,
-                    'role' => $user->role,
+                'message'              => 'You must change your password before continuing.',
+                'jwt'                  => $token,
+                'user'                 => [
+                    'uuid'          => $user->uuid,
+                    'name'          => $user->first_name . ' ' . $user->last_name,
+                    'role'          => $user->role,
+                    'department_id' => $user->department_id,
                 ],
             ], 200);
         }
 
-        // 5. Generate anonymous token
-        $plainToken   = Str::random(64);
-        $hashedToken  = hash('sha256', $plainToken);
-
-        AnonymousToken::create([
-            'token_hash'    => $hashedToken,
-            'role'          => $user->role,
-            'department_id' => $user->department_id,
-            'expires_at'    => now()->addMinutes(30),
-        ]);
-
-        // 6. Load profile based on role
-        $profile = $this->loadProfile($user);
+        // Normal login — generate anonymous token
+        $anonToken = $this->generateAnonToken($user);
 
         return response()->json([
-            'success'         => true,
+            'success'              => true,
             'must_change_password' => false,
-            'jwt'             => $token,
-            'anonymous_token' => $plainToken,
-            'expires_in'      => 1800, // 30 minutes in seconds
-            'user'            => [
-                'uuid'          => $user->uuid,
-                'name'          => $user->first_name . ' ' . $user->last_name,
-                'email'         => $user->email,
-                'role'          => $user->role,
-                'department_id' => $user->department_id,
-                'profile'       => $profile,
-            ],
+            'jwt'                  => $token,
+            'anonymous_token'      => $anonToken,
+            'expires_in'           => 1800,
+            'user'                 => $this->buildUserPayload($user),
+        ], 200);
+    }
+
+    // ─────────────────────────────────────────────
+    // CHANGE PASSWORD
+    // ─────────────────────────────────────────────
+    public function changePassword(ChangePasswordRequest $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::user();
+        } catch (JWTException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Token invalid or expired. Please login again.',
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
+        }
+
+        // Check current password
+        if (!Hash::check($request->current_password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Current password is incorrect.',
+            ], 422);
+        }
+
+        // New password must differ from current
+        if (Hash::check($request->new_password, $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'New password must be different from current password.',
+            ], 422);
+        }
+
+        // Update password in DB
+        $user->password             = Hash::make($request->new_password);
+        $user->must_change_password = false;
+        $user->save();
+
+        // Invalidate old token and issue fresh JWT
+        try {
+            JWTAuth::invalidate(JWTAuth::getToken());
+        } catch (JWTException $e) {
+            // Continue even if invalidation fails
+        }
+
+        $freshUser = User::findOrFail($user->id);
+        $newJwt    = JWTAuth::fromUser($freshUser);
+
+        // Generate anonymous token
+        
+        $anonToken = $this->generateAnonToken($freshUser);
+
+        return response()->json([
+            'success'              => true,
+            'must_change_password' => false,
+            'message'              => 'Password changed successfully.',
+            'jwt'                  => $newJwt,
+            'anonymous_token'      => $anonToken,
+            'expires_in'           => 1800,
+            'user'                 => $this->buildUserPayload($freshUser),
         ], 200);
     }
 
@@ -108,7 +155,6 @@ class AuthController extends Controller
     {
         try {
             JWTAuth::invalidate(JWTAuth::getToken());
-
             return response()->json([
                 'success' => true,
                 'message' => 'Logged out successfully.',
@@ -116,7 +162,7 @@ class AuthController extends Controller
         } catch (JWTException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to logout. Try again.',
+                'message' => 'Failed to logout.',
             ], 500);
         }
     }
@@ -127,25 +173,14 @@ class AuthController extends Controller
     public function refresh(): JsonResponse
     {
         try {
-            $newToken = JWTAuth::refresh(JWTAuth::getToken());
-
-            $user = JWTAuth::setToken($newToken)->toUser();
-
-            // Generate a fresh anonymous token too
-            $plainToken  = Str::random(64);
-            $hashedToken = hash('sha256', $plainToken);
-
-            AnonymousToken::create([
-                'token_hash'    => $hashedToken,
-                'role'          => $user->role,
-                'department_id' => $user->department_id,
-                'expires_at'    => now()->addMinutes(30),
-            ]);
+            $newToken  = JWTAuth::refresh(JWTAuth::getToken());
+            $user      = JWTAuth::setToken($newToken)->toUser();
+            $anonToken = $this->generateAnonToken($user);
 
             return response()->json([
                 'success'         => true,
                 'jwt'             => $newToken,
-                'anonymous_token' => $plainToken,
+                'anonymous_token' => $anonToken,
                 'expires_in'      => 1800,
             ], 200);
         } catch (JWTException $e) {
@@ -157,82 +192,61 @@ class AuthController extends Controller
     }
 
     // ─────────────────────────────────────────────
-    // CHANGE PASSWORD (forced on first login)
-    // ─────────────────────────────────────────────
-    public function changePassword(ChangePasswordRequest $request): JsonResponse
-    {
-        $user = JWTAuth::user();
-
-        // Verify old password
-        if (!Hash::check($request->current_password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Current password is incorrect.',
-            ], 422);
-        }
-
-        // New password must not be same as old
-        if (Hash::check($request->new_password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'New password must be different from current password.',
-            ], 422);
-        }
-
-        // Save new password and clear the force-change flag
-        $user->update([
-            'password'             => Hash::make($request->new_password),
-            'must_change_password' => false,
-        ]);
-
-        // Now generate anonymous token since login is fully complete
-        $plainToken  = Str::random(64);
-        $hashedToken = hash('sha256', $plainToken);
-
-        AnonymousToken::create([
-            'token_hash'    => $hashedToken,
-            'role'          => $user->role,
-            'department_id' => $user->department_id,
-            'expires_at'    => now()->addMinutes(30),
-        ]);
-
-        return response()->json([
-            'success'         => true,
-            'message'         => 'Password changed successfully.',
-            'anonymous_token' => $plainToken,
-            'expires_in'      => 1800,
-        ], 200);
-    }
-
-    // ─────────────────────────────────────────────
-    // GET AUTHENTICATED USER
+    // GET ME
     // ─────────────────────────────────────────────
     public function me(): JsonResponse
     {
-        $user    = JWTAuth::user();
-        $profile = $this->loadProfile($user);
+        $user = JWTAuth::user();
 
         return response()->json([
             'success' => true,
-            'user'    => [
-                'uuid'          => $user->uuid,
-                'name'          => $user->first_name . ' ' . $user->last_name,
-                'first_name'    => $user->first_name,
-                'last_name'     => $user->last_name,
-                'email'         => $user->email,
-                'role'          => $user->role,
-                'department_id' => $user->department_id,
-                'department'    => $user->department?->name,
-                'is_active'     => $user->is_active,
-                'last_login_at' => $user->last_login_at,
-                'profile'       => $profile,
-            ],
+            'user'    => $this->buildUserPayload($user),
         ], 200);
     }
 
     // ─────────────────────────────────────────────
-    // PRIVATE HELPER — load correct profile by role
+    // PRIVATE HELPERS
     // ─────────────────────────────────────────────
+
+    // Roles that NEVER have a department
+    private function isGlobalRole(string $role): bool
+    {
+        return in_array($role, ['admin', 'rector', 'registrar']);
+    }
+
+    private function generateAnonToken(User $user): string
+    {
+        $plain  = Str::random(64);
+        $hashed = hash('sha256', $plain);
+
+        AnonymousToken::create([
+            'token_hash'    => $hashed,
+            'role'          => $user->role,
+            'department_id' => $this->isGlobalRole($user->role)
+                                ? null
+                                : $user->department_id,
+            'expires_at'    => now()->addMinutes(30),
+        ]);
+
+        return $plain;
+    }
+
+    private function buildUserPayload(User $user): array
+    {
+        return [
+            'uuid'          => $user->uuid,
+            'name'          => $user->first_name . ' ' . $user->last_name,
+            'first_name'    => $user->first_name,
+            'last_name'     => $user->last_name,
+            'email'         => $user->email,
+            'role'          => $user->role,
+            'department_id' => $this->isGlobalRole($user->role) ? null : $user->department_id,
+            'is_active'     => $user->is_active,
+            'last_login_at' => $user->last_login_at,
+            'profile'       => $this->loadProfile($user),
+        ];
+    }
+
     private function loadProfile(User $user): array|null
     {
         return match (true) {
@@ -246,7 +260,6 @@ class AuthController extends Controller
     private function studentProfile(User $user): array|null
     {
         $profile = $user->studentProfile?->load('program.department.faculty');
-
         if (!$profile) return null;
 
         return [
@@ -265,15 +278,14 @@ class AuthController extends Controller
     private function staffProfile(User $user): array|null
     {
         $profile = $user->staffProfile;
-
         if (!$profile) return null;
 
         return [
-            'staff_number'     => $profile->staff_number,
-            'title'            => $profile->title,
-            'specialization'   => $profile->specialization,
-            'employment_type'  => $profile->employment_type,
-            'office_location'  => $profile->office_location,
+            'staff_number'    => $profile->staff_number,
+            'title'           => $profile->title,
+            'specialization'  => $profile->specialization,
+            'employment_type' => $profile->employment_type,
+            'office_location' => $profile->office_location,
         ];
     }
 }
