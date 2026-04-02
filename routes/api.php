@@ -38,3 +38,5 @@ Route::prefix('registrar')->middleware('auth:api')->group(function () {
     Route::post('/import/staff',    [CsvImportController::class, 'importStaff']);
     Route::get('/imports/{uuid}',   [CsvImportController::class, 'show']);
 });
+// Token validation — used by feedback service
+Route::post('/token/validate', [AuthController::class, 'validateAnonToken']);

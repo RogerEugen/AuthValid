@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use Tymon\JWTAuth\Exceptions\JWTException;
+use Illuminate\Http\Request;
 
 class AuthController extends Controller
 {
@@ -288,4 +289,46 @@ class AuthController extends Controller
             'office_location' => $profile->office_location,
         ];
     }
+    // ─────────────────────────────────────────────
+// VALIDATE ANONYMOUS TOKEN (called by feedback service)
+// ─────────────────────────────────────────────
+public function validateAnonToken(Request $request): JsonResponse
+{
+    $plain = $request->anonymous_token;
+
+    if (!$plain) {
+        return response()->json(['valid' => false, 'message' => 'No token provided.'], 422);
+    }
+
+    $hashed = hash('sha256', $plain);
+    $token  = AnonymousToken::where('token_hash', $hashed)->first();
+
+    if (!$token) {
+        return response()->json(['valid' => false, 'message' => 'Token not found.'], 401);
+    }
+
+    if ($token->is_used) {
+        return response()->json(['valid' => false, 'message' => 'Token already used.'], 401);
+    }
+
+    if ($token->is_revoked) {
+        return response()->json(['valid' => false, 'message' => 'Token revoked.'], 401);
+    }
+
+    if ($token->expires_at->isPast()) {
+        return response()->json(['valid' => false, 'message' => 'Token expired.'], 401);
+    }
+
+    // Mark token as used — one time only
+    $token->update([
+        'is_used' => true,
+        'used_at' => now(),
+    ]);
+
+    return response()->json([
+        'valid'         => true,
+        'role'          => $token->role,
+        'department_id' => $token->department_id,
+    ]);
+}
 }
