@@ -290,36 +290,51 @@ class AuthController extends Controller
         ];
     }
     // ─────────────────────────────────────────────
-// VALIDATE ANONYMOUS TOKEN (called by feedback service)
-// ─────────────────────────────────────────────
-public function validateAnonToken(Request $request): JsonResponse
+    // VALIDATE ANONYMOUS TOKEN (called by feedback service)
+    // ─────────────────────────────────────────────
+   public function validateAnonToken(Request $request): JsonResponse
 {
     $plain = $request->anonymous_token;
 
     if (!$plain) {
-        return response()->json(['valid' => false, 'message' => 'No token provided.'], 422);
+        return response()->json([
+            'valid'   => false,
+            'message' => 'No token provided.',
+        ], 422);
     }
 
     $hashed = hash('sha256', $plain);
     $token  = AnonymousToken::where('token_hash', $hashed)->first();
 
     if (!$token) {
-        return response()->json(['valid' => false, 'message' => 'Token not found.'], 401);
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token not found.',
+        ], 401);
     }
 
     if ($token->is_used) {
-        return response()->json(['valid' => false, 'message' => 'Token already used.'], 401);
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token already used. Please submit again.',
+        ], 401);
     }
 
     if ($token->is_revoked) {
-        return response()->json(['valid' => false, 'message' => 'Token revoked.'], 401);
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token revoked.',
+        ], 401);
     }
 
     if ($token->expires_at->isPast()) {
-        return response()->json(['valid' => false, 'message' => 'Token expired.'], 401);
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token expired. Please login again.',
+        ], 401);
     }
 
-    // Mark token as used — one time only
+    // Mark as used
     $token->update([
         'is_used' => true,
         'used_at' => now(),
@@ -331,4 +346,35 @@ public function validateAnonToken(Request $request): JsonResponse
         'department_id' => $token->department_id,
     ]);
 }
+
+    // ─────────────────────────────────────────────
+    // REFRESH ANONYMOUS TOKEN ONLY
+    // called by views service after each feedback submission
+    // ─────────────────────────────────────────────
+    public function refreshAnonToken(Request $request): JsonResponse
+    {
+        try {
+            $user = JWTAuth::user();
+        } catch (JWTException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'JWT invalid. Please login again.',
+            ], 401);
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not found.',
+            ], 404);
+        }
+
+        $anonToken = $this->generateAnonToken($user);
+
+        return response()->json([
+            'success'         => true,
+            'anonymous_token' => $anonToken,
+            'expires_in'      => 1800,
+        ]);
+    }
 }

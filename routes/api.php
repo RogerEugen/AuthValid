@@ -16,6 +16,7 @@ Route::prefix('auth')->middleware('auth:api')->group(function () {
     Route::post('/refresh',         [AuthController::class, 'refresh']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::get('/me',               [AuthController::class, 'me']);
+    Route::post('/refresh-anon-token',   [AuthController::class, 'refreshAnonToken']); // ✅ new
 });
 
 // ── Admin only can use this api points from the proxy───────────────────────────────
