@@ -34,10 +34,23 @@ class StoreProgramRequest extends FormRequest
                 'max:20',
                 'unique:programs,code,' . $programId,
             ],
-            'level'            => ['required', 'in:basic_certificate,certificate,diploma,higher_diploma,postgraduate_diploma,bachelors,masters,phd'],
+            //  Accept both cases — normalize in controller
+            'level' => [
+                'required',
+                'in:basic_certificate,certificate,diploma,higher_diploma,postgraduate_diploma,bachelors,masters,phd'
+            ],
             'duration_years'   => ['required', 'numeric', 'min:0.01', 'max:10'],
-            'duration_display' => ['required', 'string', 'max:50'],
+            //  Make duration_display optional — controller generates it
+            'duration_display' => ['nullable', 'string', 'max:50'],
             'is_active'        => ['sometimes', 'boolean'],
+        ];
+    }
+
+   
+    public function messages(): array
+    {
+        return [
+            'level.in' => 'Level must be: certificate, diploma, degree, masters, or phd.',
         ];
     }
 

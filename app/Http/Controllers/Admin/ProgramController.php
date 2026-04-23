@@ -46,13 +46,29 @@ class ProgramController extends Controller
     {
         $department = Department::findOrFail($request->department_id);
 
+        // ✅ Normalize level to lowercase always
+        $level = strtolower($request->level);
+
+        // // ✅ Map 'bachelors' → 'degree' if someone sends that
+        // $levelMap = [
+        //     'bachelors' => 'degree',
+        //     'bachelor'  => 'degree',
+        //     'bachelor of' => 'degree',
+        // ];
+        // $level = $levelMap[$level] ?? $level;
+
+        // ✅ Generate duration_display if not provided
+        $durationYears   = $request->duration_years;
+        $durationDisplay = $request->duration_display
+            ?? ($durationYears . ' year' . ($durationYears > 1 ? 's' : ''));
+
         $program = Program::create([
             'department_id'    => $department->id,
             'name'             => $request->name,
             'code'             => strtoupper($request->code),
-            'level'            => $request->level,
-            'duration_years'   => $request->duration_years,
-            'duration_display' => $request->duration_display,
+            'level'            => $level,
+            'duration_years'   => $durationYears,
+            'duration_display' => $durationDisplay,
             'is_active'        => $request->is_active ?? true,
         ]);
 
@@ -61,19 +77,6 @@ class ProgramController extends Controller
             'message' => 'Program created successfully.',
             'program' => $program->load('department.faculty'),
         ], 201);
-    }
-    /**
-     * Display the specified resource.
-     */
-    // GET /api/admin/programs/{id}
-    public function show(int $id): JsonResponse
-    {
-        $program = Program::with('department.faculty')->findOrFail($id);
-
-        return response()->json([
-            'success' => true,
-            'program' => $program,
-        ]);
     }
 
     /**
@@ -87,7 +90,8 @@ class ProgramController extends Controller
             'department_id'    => $request->department_id,
             'name'             => $request->name,
             'code'             => strtoupper($request->code),
-            'level'            => $request->level,
+            // 'level'            => $request->level,
+            'level' => strtolower($request->level),
             'duration_years'   => $request->duration_years,
             'duration_display' => $request->duration_display,
             'is_active'        => $request->is_active ?? $program->is_active,
@@ -99,7 +103,7 @@ class ProgramController extends Controller
             'program' => $program->load('department.faculty'),
         ]);
     }
-
+ 
     /**
      * Remove the specified resource from storage.
      */

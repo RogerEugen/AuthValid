@@ -235,6 +235,7 @@ class AuthController extends Controller
     private function buildUserPayload(User $user): array
     {
         return [
+            'id'            => $user->id, //we aim to get the lecture well here 
             'uuid'          => $user->uuid,
             'name'          => $user->first_name . ' ' . $user->last_name,
             'first_name'    => $user->first_name,
@@ -242,11 +243,31 @@ class AuthController extends Controller
             'email'         => $user->email,
             'role'          => $user->role,
             'department_id' => $this->isGlobalRole($user->role) ? null : $user->department_id,
+            'faculty_id'    => $this->getFacultyId($user), // ✅ ADD
             'is_active'     => $user->is_active,
             'last_login_at' => $user->last_login_at,
             'profile'       => $this->loadProfile($user),
         ];
     }
+
+    //  NEW — get faculty_id based on role
+private function getFacultyId(User $user): ?int
+{
+    // Dean has faculty via dean_user_id on faculties table
+    if ($user->role === 'dean') {
+        $faculty = \App\Models\Faculty::where('dean_user_id', $user->id)->first();
+        return $faculty?->id;
+    }
+
+    // HOD/Lecturer — get faculty via department
+    if (in_array($user->role, ['hod', 'lecturer']) && $user->department_id) {
+        $dept = \App\Models\Department::with('faculty')->find($user->department_id);
+        return $dept?->faculty?->id;
+    }
+
+    // Student — comes from profile
+    return null;
+}
 
     private function loadProfile(User $user): array|null
     {
@@ -272,7 +293,9 @@ class AuthController extends Controller
             'program'             => $profile->program?->name,
             'program_code'        => $profile->program?->code,
             'department'          => $profile->program?->department?->name,
+            'department_id'       => $profile->program?->department?->id, //adding the falcuties
             'faculty'             => $profile->program?->department?->faculty?->name,
+            'faculty_id'          => $profile->program?->department?->faculty?->id, //  ADD
         ];
     }
 
@@ -377,4 +400,74 @@ class AuthController extends Controller
             'expires_in'      => 1800,
         ]);
     }
+    public function lecturersByDepartment($departmentId)
+{
+    $lecturers = \App\Models\User::query()
+        ->where('role', 'lecturer')          // ✅ ONLY lecturers
+        ->where('department_id', $departmentId)
+        ->where('is_active', true)
+        ->with('staffProfile')               // optional (for staff_number)
+        ->get()
+        ->map(function ($user) {
+            return [
+                'id'           => $user->id, // ← THIS is lecturer_id
+                'name'         => $user->first_name . ' ' . $user->last_name,
+                'staff_number' => optional($user->staffProfile)->staff_number,
+            ];
+        });
+
+    return response()->json([
+        'success'   => true,
+        'lecturers' => $lecturers,
+    ]);
+}
+
+
+// ─────────────────────────────────────────────
+// VALIDATE TOKEN FOR EVALUATION (does NOT mark as used)
+// Used by course evaluations — student can evaluate multiple courses
+// ─────────────────────────────────────────────
+public function validateAnonTokenForEvaluation(Request $request): JsonResponse
+{
+    $plain = $request->anonymous_token;
+
+    if (!$plain) {
+        return response()->json([
+            'valid'   => false,
+            'message' => 'No token provided.',
+        ], 422);
+    }
+
+    $hashed = hash('sha256', $plain);
+    $token  = AnonymousToken::where('token_hash', $hashed)->first();
+
+    if (!$token) {
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token not found.',
+        ], 401);
+    }
+
+    if ($token->is_revoked) {
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token revoked.',
+        ], 401);
+    }
+
+    if ($token->expires_at->isPast()) {
+        return response()->json([
+            'valid'   => false,
+            'message' => 'Token expired. Please login again.',
+        ], 401);
+    }
+
+    // ✅ DO NOT mark as used — student needs to evaluate multiple courses
+    return response()->json([
+        'valid'         => true,
+        'role'          => $token->role,
+        'department_id' => $token->department_id,
+    ]);
+}
+
 }

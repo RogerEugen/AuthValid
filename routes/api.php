@@ -41,3 +41,5 @@ Route::prefix('registrar')->middleware('auth:api')->group(function () {
 });
 // Token validation — used by feedback service
 Route::post('/token/validate', [AuthController::class, 'validateAnonToken']);
+Route::get('departments/{departmentId}/lecturers', [AuthController::class, 'lecturersByDepartment']);
+Route::post('/token/validate-evaluation', [AuthController::class, 'validateAnonTokenForEvaluation']);
