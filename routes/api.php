@@ -29,6 +29,9 @@ Route::prefix('admin')->middleware('auth:api')->group(function () {
     // Programs
     Route::apiResource('programs', ProgramController::class);
     Route::get('departments/{departmentId}/programs', [ProgramController::class, 'byDepartment']);
+      // ✅ HOD routes (FIXED — no extra prefix)
+    Route::post('departments/{id}/assign-hod',  [DepartmentController::class, 'assignHod']);
+    Route::post('departments/{id}/replace-hod', [DepartmentController::class, 'replaceHod']);
 });
 
 
