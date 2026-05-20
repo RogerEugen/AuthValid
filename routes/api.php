@@ -16,7 +16,7 @@ Route::prefix('auth')->middleware('auth:api')->group(function () {
     Route::post('/refresh',         [AuthController::class, 'refresh']);
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::get('/me',               [AuthController::class, 'me']);
-    Route::post('/refresh-anon-token',   [AuthController::class, 'refreshAnonToken']); // ✅ new
+    Route::post('/refresh-anon-token',   [AuthController::class, 'refreshAnonToken']); //  new
 });
 
 // ── Admin only can use this api points from the proxy───────────────────────────────
@@ -31,7 +31,7 @@ Route::prefix('admin')->middleware('auth:api')->group(function () {
     // Programs
     Route::apiResource('programs', ProgramController::class);
     Route::get('departments/{departmentId}/programs', [ProgramController::class, 'byDepartment']);
-      // ✅ HOD routes (FIXED — no extra prefix)
+      // HOD routes (FIXED — no extra prefix)
     Route::post('departments/{id}/assign-hod',  [DepartmentController::class, 'assignHod']);
     Route::post('departments/{id}/replace-hod', [DepartmentController::class, 'replaceHod']);
 });
