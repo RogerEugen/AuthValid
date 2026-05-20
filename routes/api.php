@@ -23,6 +23,8 @@ Route::prefix('auth')->middleware('auth:api')->group(function () {
 Route::prefix('admin')->middleware('auth:api')->group(function () {
     // Faculties
     Route::apiResource('faculties', FacultyController::class);
+    Route::post('faculties/{id}/assign-dean',  [FacultyController::class, 'assignDean']);
+    Route::post('faculties/{id}/replace-dean', [FacultyController::class, 'replaceDean']);
     // Departments
     Route::apiResource('departments', DepartmentController::class);
     Route::get('faculties/{facultyId}/departments', [DepartmentController::class, 'byFaculty']);
