@@ -8,7 +8,8 @@ class AnonymousToken extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'token_hash', 
+        'user_id',
+        'token_hash',
         'role', 
         'department_id',
         'expires_at', 
