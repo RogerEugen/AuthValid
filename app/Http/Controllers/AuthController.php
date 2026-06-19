@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\ChangePasswordRequest;
 use App\Models\AnonymousToken;
+use App\Models\ContentViolation;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -221,6 +222,7 @@ class AuthController extends Controller
         $hashed = hash('sha256', $plain);
 
         AnonymousToken::create([
+            'user_id'       => $user->id,
             'token_hash'    => $hashed,
             'role'          => $user->role,
             'department_id' => $this->isGlobalRole($user->role)
@@ -400,6 +402,130 @@ private function getFacultyId(User $user): ?int
             'expires_in'      => 1800,
         ]);
     }
+
+    /**
+     * Record abusive-language attempts without exposing the user to the
+     * feedback service or operational recipients.
+     */
+    public function recordContentViolation(Request $request): JsonResponse
+    {
+        $request->validate([
+            'anonymous_token' => ['required', 'string', 'min:10'],
+            'content_fingerprint' => ['required', 'string', 'size:64'],
+        ]);
+
+        $token = AnonymousToken::where(
+            'token_hash',
+            hash('sha256', $request->anonymous_token)
+        )->first();
+
+        if (!$token || !$token->user_id || $token->is_revoked || $token->expires_at->isPast()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The anonymous session is invalid or expired.',
+            ], 401);
+        }
+
+        $sequence = min(
+            ContentViolation::where('user_id', $token->user_id)->count() + 1,
+            255
+        );
+        $requiresReview = $sequence >= 2;
+
+        ContentViolation::create([
+            'user_id' => $token->user_id,
+            'user_role' => $token->role,
+            'content_fingerprint' => $request->content_fingerprint,
+            'sequence' => $sequence,
+            'student_affairs_review' => $requiresReview,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'violation_count' => $sequence,
+            'student_affairs_review' => $requiresReview,
+        ]);
+    }
+
+    public function deanContentViolations(): JsonResponse
+    {
+        $dean = JWTAuth::user();
+        if (!$dean || $dean->role !== 'dean') {
+            return response()->json(['message' => 'Dean access is required.'], 403);
+        }
+
+        $facultyId = $this->getFacultyId($dean);
+        if (!$facultyId) {
+            return response()->json(['success' => true, 'reviews' => []]);
+        }
+
+        $reviews = ContentViolation::query()
+            ->where('student_affairs_review', true)
+            ->with([
+                'user.studentProfile.program.department.faculty',
+                'user.department.faculty',
+            ])
+            ->latest()
+            ->get()
+            ->filter(function (ContentViolation $violation) use ($facultyId) {
+                $user = $violation->user;
+                $userFacultyId = $user?->role === 'student'
+                    ? $user?->studentProfile?->program?->department?->faculty?->id
+                    : $user?->department?->faculty?->id;
+
+                return (int) $userFacultyId === (int) $facultyId;
+            })
+            ->unique('user_id')
+            ->values()
+            ->map(function (ContentViolation $violation) {
+                $user = $violation->user;
+
+                return [
+                    'id' => $violation->id,
+                    'name' => trim($user->first_name . ' ' . $user->last_name),
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'registration_number' => $user->studentProfile?->registration_number,
+                    'department' => $user->role === 'student'
+                        ? $user->studentProfile?->program?->department?->name
+                        : $user->department?->name,
+                    'violation_count' => ContentViolation::where('user_id', $user->id)->count(),
+                    'last_violation_at' => $violation->created_at,
+                    'reviewed_at' => $violation->reviewed_at,
+                ];
+            });
+
+        return response()->json(['success' => true, 'reviews' => $reviews]);
+    }
+
+    public function markContentViolationReviewed(int $id): JsonResponse
+    {
+        $dean = JWTAuth::user();
+        if (!$dean || $dean->role !== 'dean') {
+            return response()->json(['message' => 'Dean access is required.'], 403);
+        }
+
+        $facultyId = $this->getFacultyId($dean);
+        $violation = ContentViolation::where('student_affairs_review', true)
+            ->with([
+                'user.studentProfile.program.department.faculty',
+                'user.department.faculty',
+            ])
+            ->findOrFail($id);
+        $user = $violation->user;
+        $userFacultyId = $user?->role === 'student'
+            ? $user?->studentProfile?->program?->department?->faculty?->id
+            : $user?->department?->faculty?->id;
+
+        if (!$facultyId || (int) $userFacultyId !== (int) $facultyId) {
+            return response()->json(['message' => 'This review does not belong to your faculty.'], 403);
+        }
+
+        $violation->update(['reviewed_at' => now()]);
+
+        return response()->json(['success' => true, 'message' => 'Conduct review marked as reviewed.']);
+    }
+
     public function lecturersByDepartment($departmentId)
 {
     $lecturers = \App\Models\User::query()

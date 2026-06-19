@@ -17,6 +17,8 @@ Route::prefix('auth')->middleware('auth:api')->group(function () {
     Route::post('/change-password', [AuthController::class, 'changePassword']);
     Route::get('/me',               [AuthController::class, 'me']);
     Route::post('/refresh-anon-token',   [AuthController::class, 'refreshAnonToken']); //  new
+    Route::get('/dean/content-violations', [AuthController::class, 'deanContentViolations']);
+    Route::post('/dean/content-violations/{id}/review', [AuthController::class, 'markContentViolationReviewed']);
 });
 
 // ── Admin only can use this api points from the proxy───────────────────────────────
@@ -48,3 +50,4 @@ Route::prefix('registrar')->middleware('auth:api')->group(function () {
 Route::post('/token/validate', [AuthController::class, 'validateAnonToken']);
 Route::get('departments/{departmentId}/lecturers', [AuthController::class, 'lecturersByDepartment']);
 Route::post('/token/validate-evaluation', [AuthController::class, 'validateAnonTokenForEvaluation']);
+Route::post('/token/content-violation', [AuthController::class, 'recordContentViolation']);
