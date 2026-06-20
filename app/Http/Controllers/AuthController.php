@@ -369,6 +369,11 @@ private function getFacultyId(User $user): ?int
         'valid'         => true,
         'role'          => $token->role,
         'department_id' => $token->department_id,
+        // Stable anonymous key prevents one student from evaluating the same
+        // lecturer/course repeatedly by refreshing their anonymous token.
+        'participant_key' => $token->user_id
+            ? hash_hmac('sha256', (string) $token->user_id, (string) config('app.key'))
+            : null,
     ]);
 }
 
